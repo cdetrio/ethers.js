@@ -13,7 +13,8 @@
     "ethers-contracts": "2.1.8",
     "ethers-providers": "2.1.14",
     "ethers-utils": "2.1.8",
-    "ethers-wallet": "2.1.6"
+    "ethers-wallet": "2.1.6",
+    "lodash.clonedeep": "^4.5.0"
   },
   "devDependencies": {
     "grunt": "^0.4.5",
@@ -21,7 +22,8 @@
     "grunt-cli": "1.2.0",
     "grunt-contrib-uglify": "^1.0.1",
     "mocha": "^3.2.0",
-    "mocha-phantomjs-core": "2.1.2"
+    "mocha-phantomjs-core": "2.1.2",
+    "promise-rationing": "0.0.1"
   },
   "keywords": [
     "ethereum",

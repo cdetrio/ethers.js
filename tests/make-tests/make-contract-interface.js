@@ -14,6 +14,8 @@ var arrayify = require('../../utils/convert').arrayify;
 
 var utils = require('../utils.js');
 
+var cloneDeep = require('lodash.clonedeep');
+
 
 function addLog(message) {
     fs.appendFileSync('make-contract-interface.log', message + '\n');
@@ -31,6 +33,8 @@ process.on('unhandledRejection', function(reason, p){
 
 
 var compile = (function() {
+    // soljson.js is not included. download and place in dir..
+    // wget https://github.com/ethereum/solc-bin/raw/gh-pages/bin/soljson-latest.js
     var soljson = require('../soljson.js');
     var _compile = soljson.cwrap("compileJSONCallback", "string", ["string", "number", "number"]);
 
@@ -130,7 +134,8 @@ function populate(name, value, depth, info) {
 
     value.localName = name;
     if (value.type === 'tuple') {
-        info.pragmas['experimental ABIEncoderV2'] = true;
+        // disabled for fuzzing standard vs experimental
+        // info.pragmas['experimental ABIEncoderV2'] = true;
 
         var source = '';
         var types = [];
@@ -158,7 +163,8 @@ function populate(name, value, depth, info) {
             populate(name + '[' + String(index) + ']', value, depth + 1, info);
 
             if (value.dynamic) {
-                info.pragmas['experimental ABIEncoderV2'] = true;
+                // disabled for fuzzing standard vs experimental
+                // info.pragmas['experimental ABIEncoderV2'] = true;
             }
         });
 
@@ -338,6 +344,9 @@ function sendTransaction(transaction) {
 }
 
 
+
+
+
 function _check(name, values, info) {
     var test = JSON.stringify(values);
 
@@ -380,366 +389,67 @@ function _check(name, values, info) {
     }
 
     if (!contract) { throw new Error('invalid version'); }
-
-    var transaction = { data: '0x' + contract.bytecode };
-
-    return sendTransaction(transaction).then(function(hash) {
-        console.log('Transaction', hash);
-
-        return new Promise(function(resolve, reject) {
-            function check() {
-                web3Promise('getTransaction', [hash]).then(function(transaction) {
-                    if (transaction.blockHash) {
-                        console.log('Done', hash);
-                        resolve(transaction);
-                        return;
-                    }
-                    console.log('Waiting', hash);
-                    setTimeout(check, 1000);
-                }, function(error) {
-                    reject(error);
-                })
-            }
-            check();
-        });
-
-    }).then(function(transaction) {
-        return new web3Promise('call', [{
-            to: transaction.creates,
-            data: '0xf8a8fd6d',
-        }]);
-
-    }).then(function(result) {
-        console.log('Result', result);
-
-        var output = {
-            bytecode: '0x' + contract.bytecode,
-            result: result,
-            interface: contract.interface,
-            name: name,
-            runtimeBytecode: '0x' + contract.runtimeBytecode,
-            source: contract.sourceCode,
-            types: JSON.stringify(types),
-            values: JSON.stringify(recursiveHexlify(values)),
-            version: contract.version,
+    
+    var output = {
+        bytecode: '0x' + contract.bytecode,
+        // result: result,
+        interface: contract.interface,
+        name: name,
+        runtimeBytecode: '0x' + contract.runtimeBytecode,
+        source: contract.sourceCode,
+        types: JSON.stringify(types),
+        values: JSON.stringify(recursiveHexlify(values)),
+        version: contract.version,
 //            normalizedValues: JSON.stringify(recursiveHexlify(normalizedValues)),
-        };
-
-        return output;
-    });
-}
-
-function makeTests() {
-
-    var promiseFuncs = [];
-
-    function check(name, types, values, normalizedValues) {
-        if (normalizedValues == null) { normalizedValues = values; }
-        promiseFuncs.push(function(resolve, reject) {
-            var test = [ ];
-            types.forEach(function(type, index) {
-                test.push({
-                    type: type,
-                    normalizedValue: normalizedValues[index],
-                    value: values[index]
-                });
-            });
-            _check(name, test).then(function(result) {
-                resolve(result);
-            }, function(error) {
-                reject(error);
-            });
-        });
     };
 
-
-    // Test cases: https://github.com/ethereum/solidity.js/blob/master/test/coder.decodeParam.js
-    check('sol-1', ['int'], [new BN(1)]);
-    check('sol-2', ['int'], [new BN(16)]);
-
-    check('sol-3', ['int'], [new BN(-1)]);
-    check('sol-4', ['int256'], [new BN(1)]);
-    check('sol-5', ['int256'], [new BN(16)]);
-    check('sol-6', ['int256'], [new BN(-1)]);
-    check('sol-7', ['int8'], [new BN(16)]);
-    check('sol-8', ['int32'], [new BN(16)]);
-    check('sol-9', ['int64'], [new BN(16)]);
-    check('sol-10', ['int128'], [new BN(16)]);
-
-    check('sol-11', ['uint'], [new BN(1)]);
-    check('sol-12', ['uint'], [new BN(16)]);
-    check('sol-13', ['uint'], [new BN(-1)], [new BN('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 16)]);
-    check('sol-14', ['uint256'], [new BN(1)]);
-    check('sol-15', ['uint256'], [new BN(16)]);
-    check('sol-16', ['uint256'], [new BN(-1)], [new BN('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 16)]);
-    check('sol-17', ['uint8'], [new BN(16)]);
-    check('sol-18', ['uint32'], [new BN(16)]);
-    check('sol-19', ['uint64'], [new BN(16)]);
-    check('sol-20', ['uint128'], [new BN(16)]);
-
-    check('sol-21', ['int', 'int'], [new BN(1), new BN(2)]);
-    check('sol-22', ['int', 'int'], [new BN(1), new BN(2)]);
-    check('sol-23', ['int[2]', 'int'], [[new BN(12), new BN(22)], new BN(3)]);
-    check('sol-24', ['int[2]', 'int[]'], [[new BN(32), new BN(42)], [new BN(3), new BN(4), new BN(5)]]);
-
-    check('sol-25',
-        ['bytes32'],
-        [new Buffer('6761766f66796f726b0000000000000000000000000000000000000000000000', 'hex')]
-    );
-    check('sol-26',
-        ['bytes'],
-        [new Buffer('6761766f66796f726b', 'hex')]
-    );
-
-    check('sol-27',
-        ['string'],
-        ['\uD835\uDF63']
-    );
-
-    check('sol-28',
-        ['address', 'string', 'bytes6[4]', 'int'],
-        [
-            getAddress("0x97916ef549947a3e0d321485a31dd2715a97d455"),
-            "foobar2",
-            [
-                new Buffer("a165ab0173c6", 'hex'),
-                new Buffer("f0f37bee9244", 'hex'),
-                new Buffer("c8dc0bf08d2b", 'hex'),
-                new Buffer("c8dc0bf08d2b", 'hex')
-            ],
-            34
-        ]
-    );
-
-    check('sol-29',
-        ['bytes32'],
-        [new Buffer('731a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b', 'hex')]
-    );
-    check('sol-30',
-        ['bytes'],
-        [new Buffer('731a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b', 'hex')]
-    );
-
-    check('sol-31',
-        ['bytes32[2]'],
-        [[
-            new Buffer('731a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b', 'hex'),
-            new Buffer('731a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b', 'hex')
-        ]]
-    );
-
-    check('sol-32',
-        ['bytes'],
-        [new Buffer('131a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b' +
-                    '231a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b' +
-                    '331a3afc00d1b1e3461b955e53fc866dcf303b3eb9f4c16f89e388930f48134b', 'hex')]
-    );
-
-    // Some extra checks for width and sign tests
-    check('sol-33', ['uint32'], [14], [new BN(14)]);
-    check('sol-34', ['uint32'], [14], [new BN(14)]);
-    check('sol-35', ['uint32'], [-14], [new BN(0xfffffff2)]);
-    check('sol-36', ['int32'], [14], [new BN(14)]);
-    check('sol-37', ['int32'], [-14], [new BN(-14)]);
-
-    check('sol-38', ['int8'], [new BN(1)], [new BN(1)]);
-    check('sol-39', ['int8'], [new BN(-1)], [new BN(-1)]);
-    check('sol-40', ['int8'], [new BN(189)], [new BN(-67)]);
-    check('sol-41', ['int8'], [new BN(-189)], [new BN(67)]);
-    check('sol-42', ['int8'], [new BN(257)], [new BN(1)]);
-
-    check('sol-43', ['uint8'], [new BN(343)], [new BN(87)]);
-    check('sol-44', ['uint8'], [new BN(-1)], [new BN(255)]);
-
-    check('sol-45', ['uint56[5]'], [[new BN(639), new BN(227), new BN(727), new BN(325), new BN(146)]]);
-
-    function randomTypeValue(seed, onlyStatic) {
-        switch (utils.randomNumber(seed + '-type', 0, (onlyStatic ? 5: 8))) {
-
-            // Fixed-size bytes
-            case 0:
-                var size = utils.randomNumber(seed + '-type-0', 1, 33);
-                return {
-                    type: 'bytes' + size,
-                    value: function(extraSeed) {
-                        var value = new Buffer(utils.randomBytes(seed + '-' + extraSeed + '-type-0-value', size));
-                        return {
-                            value: value,
-                            normalized: value
-                        }
-                    }
-                }
-
-            // uint and int
-            case 1:
-                var signed = (utils.randomNumber(seed + '-type-1a', 0, 2) === 0);
-                var type =  (!signed ? 'u': '') + 'int';
-                var size = 32;
-                if (utils.randomNumber(seed + '-type-1b', 0, 4) > 0) {
-                    size = utils.randomNumber(seed + '-type-1c', 1, 33)
-                    type += (8 * size);
-                }
-
-                return {
-                    type: type,
-                    value: function(extraSeed) {
-                        var mask = '';
-                        for (var i = 0; i < size; i++) { mask += 'ff'; }
-
-                        var value = utils.randomNumber(seed + '-' + extraSeed + '-type-1d', -500, 1000);
-                        var normalized = (new BN(value)).toTwos(size * 8).and(new BN(mask, 16));
-                        if (signed) {
-                            normalized = normalized.fromTwos(size * 8);
-                        }
-                        return {
-                            value: value,
-                            normalized: normalized
-                        };
-                    }
-                }
-
-            // address
-            case 2:
-                return {
-                    type: 'address',
-                    value: function(extraSeed) {
-                        var value = getAddress(utils.randomHexString(seed + '-' + extraSeed + '-type-2', 20));
-                        return {
-                            value: value,
-                            normalized: value
-                        };
-                    }
-                }
-
-            // bool
-            case 3:
-                return {
-                    type: 'bool',
-                    value: function(extraSeed) {
-                        var value = (utils.randomNumber(seed + '-' + extraSeed + '-type-3', 0, 2) === 0);
-                        return {
-                            value: value,
-                            normalized: value
-                        };
-                    }
-                }
-
-            // fixed-length array of subtype
-            case 4:
-                // @TODO: Support random(0, 6)... Why is that even possible?
-                var size = utils.randomNumber(seed + '-type-4a', 1, 6);
-
-                var subTypeValue = randomTypeValue(seed + '-type-4b', true);
-                return {
-                    type: subTypeValue.type + '[' + size + ']',
-                    value: function(extraSeed) {
-                        var values = [];
-                        var normalized = [];
-                        for (var i = 0; i < size; i++) {
-                            var value = subTypeValue.value(seed + '-' + extraSeed + '-4c-' + i);
-                            values.push(value.value);
-                            normalized.push(value.normalized);
-                        }
-                        return {
-                            value: values,
-                            normalized: normalized
-                        };
-                    }
-                }
-
-            // bytes
-            case 5:
-                return {
-                    type: 'bytes',
-                    value: function(extraSeed) {
-                        var size = utils.randomNumber(seed + '-type-5b', 0, 100);
-                        var value = new Buffer(utils.randomBytes(seed + '-' + extraSeed + '-type-5a', size));
-                        return {
-                            value: value,
-                            normalized: value
-                        };
-                    },
-                    skip: 0
-                }
-
-            // string
-            case 6:
-                var text = 'abcdefghijklmnopqrstuvwxyz\u2014ABCDEFGHIJKLMNOPQRSTUVWXYZFOOBARfoobar'
-                return {
-                    type: 'string',
-                    value: function(extraSeed) {
-                        var size = utils.randomNumber(seed + '-' + extraSeed + '-type-6', 0, 60);
-                        var value = text.substring(0, size);
-                        return {
-                            value: value,
-                            normalized: value
-                        };
-                    }
-                }
-
-            // variable-sized array of subtype
-            case 7:
-                // @TODO: bug in solidity or VM prevents this from being 0
-                var size = utils.randomNumber(seed + '-type-7a', 1, 6);
-                var subTypeValue = randomTypeValue(seed + '-type-7b', true);
-                return {
-                    type: subTypeValue.type + '[]',
-                    value: function(extraSeed) {
-                        var values = [];
-                        var normalized = [];
-                        for (var i = 0; i < size; i++) {
-                            var value = subTypeValue.value(seed + '-' + extraSeed + '-7c-' + i);
-                            values.push(value.value);
-                            normalized.push(value.normalized);
-                        }
-                        return {
-                            value: values,
-                            normalized: normalized
-                        };
-                    }
-                }
-        }
-    }
-
-    // @TODO: Test 0 arguments
-
-    // Create a bunch of random test cases
-    for (var i = 0; i < 2000; i++) {
-        var count = utils.randomNumber('count-' + i, 1, 4);
-        var types = [], values = [], normalized = [];;
-        for (var j = 0; j < count; j++) {
-            var type = randomTypeValue('type-' + i + '-' + j);
-            types.push(type.type);
-            var value = type.value('test-' + j);
-            values.push(value.value);
-            normalized.push(value.normalized);
-        }
-        check('random-' + i, types, values, normalized);
-    }
-
-    // Bug in solidity or in the VM, not sure, but this fails
-    // check('', ['uint8[4][]'], [ [] ]);
-
-    promiseRationing.all(promiseFuncs, 100).then(function(result) {
-        //utils.saveTestcase('contract-interface', result);
-    }, function(error) {
-        console.log('ERROR', error);
-    });
+    return Promise.resolve(output);
 }
+
+
+
+function checkStandardAndExperimental(name, values, info) {
+  var standardAndExperimental = {};
+
+  // var info = { pragmas: { 'experimental ABIEncoderV2': true }
+  var infoStandard = JSON.parse(JSON.stringify(info));
+  var infoExperimental = JSON.parse(JSON.stringify(info));
+
+  // infoStandard['pragmas']['experimental ABIEncoderV2'] = false;
+  delete infoStandard['pragmas']['experimental ABIEncoderV2'];
+  infoExperimental['pragmas']['experimental ABIEncoderV2'] = true;
+
+  console.log('infoStandard:', infoStandard);
+  console.log('infoExperimental:', infoExperimental);
+  
+  var nameStandard = name + '-standard';
+  var nameExperimental = name + '-experimental';
+  
+  var valuesStandard = cloneDeep(values);
+  var valuesExperimental = cloneDeep(values);
+
+  var standardCheck = _check(nameStandard, valuesStandard, infoStandard);
+  var experimentalCheck = _check(nameExperimental, valuesExperimental, infoExperimental);
+
+  return new Promise(function(resolve, reject) {
+
+    Promise.all([standardCheck, experimentalCheck]).then(bothResults => {
+      standardAndExperimental['standard'] = bothResults[0];
+      standardAndExperimental['experimental'] = bothResults[1];
+      resolve(standardAndExperimental);
+    }).catch(e => {
+      console.log('error doing checks:', e)
+      reject(e);
+    });
+
+  });
+
+}
+
+
+
 
 function makeTestsAbi2() {
-
-    var promiseFuncs = [];
-
-    function check(name, values, info) {
-        promiseFuncs.push(function(resolve, reject) {
-            _check(name, values, info).then(function(result) {
-                resolve(result);
-            }, function(error) {
-                reject(error);
-            });
-        });
-    };
 
     var address = '0x0123456789012345678901234567890123456789';
     var longText = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
@@ -871,7 +581,8 @@ function makeTestsAbi2() {
     // Procedurally generated test cases (handles some black-box testing)
 
     function randomTestPart(seed, info) {
-        switch (utils.randomNumber(seed + '-type', 0, 7)) {
+        //switch (utils.randomNumber(seed + '-type', 0, 7)) { // case 7 is a tuple
+        switch (utils.randomNumber(seed + '-type', 0, 6)) {
             case 0:
                 return {
                     type: 'address',
@@ -1017,8 +728,22 @@ function makeTestsAbi2() {
         }
     }
 
+
+    var promiseFuncs = [];
+
+    function check(name, values, info) {
+        promiseFuncs.push(function(resolve, reject) {
+            //_check(name, values, info).then(function(result) {
+            checkStandardAndExperimental(name, values, info).then(function(result) {
+                resolve(result);
+            }, function(error) {
+                reject(error);
+            });
+        });
+    };
+
+
     for (var i = 0; i < 2000; i++) {
-        //i = 917
         var test = [];
         var info = { pragmas: { 'experimental ABIEncoderV2': true }, structs: {} };
         var count = utils.randomNumber('count-' + i, 1, 5);
@@ -1028,7 +753,6 @@ function makeTestsAbi2() {
         }
         console.dir(test, { depth: null });
         check('random-' + i, test, info);
-        //break;
     }
 
     promiseRationing.all(promiseFuncs, 20).then(function(result) {
@@ -1039,5 +763,5 @@ function makeTestsAbi2() {
     });
 }
 
-//makeTests();
+
 makeTestsAbi2();
