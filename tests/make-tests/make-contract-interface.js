@@ -187,9 +187,16 @@ function createContractSource(values, info, comments) {
 
     var source = '';
 
+    /*
     var returnTypes = [];
     values.forEach(function(value, index) {
         returnTypes.push(value.name + ' ' + value.localName);
+    });
+    */
+
+    var inputTypes = [];
+    values.forEach(function(value, index) {
+        inputTypes.push(value.name + ' ' + value.localName);
     });
 
     var temp = false;
@@ -272,7 +279,8 @@ function createContractSource(values, info, comments) {
         sourcePragma,
         'contract Test {\n',
         sourceStructs,
-        (indent(1) + 'function test() pure returns (' + returnTypes.join(', ') + ') {\n'),
+        // (indent(1) + 'function test() pure returns (' + returnTypes.join(', ') + ') {\n'),
+        (indent(1) + 'function test(' + inputTypes.join(', ') + ') {\n'),
         sourceInit,
         source,
         (indent(1) + '}\n'),
@@ -357,7 +365,8 @@ function _check(name, values, info) {
     info.pragmas[ 'solidity ^0.4.18'] = true;
 
     values.forEach(function(value, index) {
-        populate('r' + index, value, 0, info)
+        // populate('r' + index, value, 0, info) // 'r' for return
+        populate('i' + index, value, 0, info) // 'i' for input
     });
 
     function getTypes(result, value) {
@@ -385,7 +394,8 @@ function _check(name, values, info) {
     var contract = compileContract(source, true);
     if (!contract) {
         console.log('Skipping:', test)
-        return Promise.resolve();
+        //return Promise.reject();
+        return Promise.resolve(false);
     }
 
     if (!contract) { throw new Error('invalid version'); }
@@ -394,6 +404,7 @@ function _check(name, values, info) {
         bytecode: '0x' + contract.bytecode,
         // result: result,
         interface: contract.interface,
+        functionHashes: contract.functionHashes,
         name: name,
         runtimeBytecode: '0x' + contract.runtimeBytecode,
         source: contract.sourceCode,
@@ -434,9 +445,15 @@ function checkStandardAndExperimental(name, values, info) {
   return new Promise(function(resolve, reject) {
 
     Promise.all([standardCheck, experimentalCheck]).then(bothResults => {
-      standardAndExperimental['standard'] = bothResults[0];
-      standardAndExperimental['experimental'] = bothResults[1];
-      resolve(standardAndExperimental);
+      if (bothResults[0] !== false && bothResults[1] !== false) {
+        standardAndExperimental['standard'] = bothResults[0];
+        standardAndExperimental['experimental'] = bothResults[1];
+        resolve(standardAndExperimental);
+      } else {
+        console.log('either standard or experimental failed.')
+        //reject(false);
+        resolve(false); // false will later be filtered
+      }
     }).catch(e => {
       console.log('error doing checks:', e)
       reject(e);
@@ -743,7 +760,8 @@ function makeTestsAbi2() {
     };
 
 
-    for (var i = 0; i < 2000; i++) {
+    //for (var i = 0; i < 2000; i++) {
+    for (var i = 0; i < 20; i++) {
         var test = [];
         var info = { pragmas: { 'experimental ABIEncoderV2': true }, structs: {} };
         var count = utils.randomNumber('count-' + i, 1, 5);

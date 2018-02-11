@@ -14,7 +14,8 @@
     "ethers-providers": "2.1.14",
     "ethers-utils": "2.1.8",
     "ethers-wallet": "2.1.6",
-    "lodash.clonedeep": "^4.5.0"
+    "lodash.clonedeep": "^4.5.0",
+    "web3": "^1.0.0-beta.29"
   },
   "devDependencies": {
     "grunt": "^0.4.5",
