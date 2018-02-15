@@ -384,7 +384,7 @@ function _check(name, values, info) {
 
     var source = createContractSource(values, info, [
         ('Test: ' + name),
-        ('Comnpiler: ' + compile.version),
+        ('Compiler: ' + compile.version),
         test
     ]);
 // MOO
@@ -760,8 +760,7 @@ function makeTestsAbi2() {
     };
 
 
-    //for (var i = 0; i < 2000; i++) {
-    for (var i = 0; i < 20; i++) {
+    for (var i = 0; i < 2000; i++) {
         var test = [];
         var info = { pragmas: { 'experimental ABIEncoderV2': true }, structs: {} };
         var count = utils.randomNumber('count-' + i, 1, 5);
